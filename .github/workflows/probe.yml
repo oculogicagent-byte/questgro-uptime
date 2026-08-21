@@ -33,7 +33,13 @@ jobs:
         run: |
           ok=0; code=000
           for i in 1 2 3; do
-            code=$(curl -sS -m 15 -o /tmp/body.json -w '%{http_code}' "$HEALTH_URL" || echo 000)
+            # Cloudflare Bot Fight Mode challenges bare curl from datacenter IPs,
+            # so the probe presents a normal browser's headers.
+            code=$(curl -sS -m 15 -o /tmp/body.json -w '%{http_code}' \
+              -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' \
+              -H 'Accept: application/json,text/html;q=0.9,*/*;q=0.8' \
+              -H 'Accept-Language: en-US,en;q=0.9' \
+              --compressed "$HEALTH_URL" || echo 000)
             status=$(python3 -c "import json;print(json.load(open('/tmp/body.json')).get('status',''))" 2>/dev/null || echo "")
             echo "attempt $i: http=$code status=$status"
             if [ "$code" = "200" ] && [ "$status" = "ok" ]; then ok=1; break; fi
