@@ -1,15 +1,29 @@
-# External synthetic check for QuestGro (https://cg.oculogic.io).
+# External synthetic check for QuestGro.
 #
-# Why this exists: the app runs on a Mac Mini behind a Cloudflare tunnel. A
-# watchdog on that Mac cannot report that the Mac is gone. This job runs on
-# GitHub's infrastructure, outside that network, and probes the public URL.
+# Why this exists: a watchdog running on the same machine as the app cannot
+# report that the machine is gone. This job runs on GitHub's infrastructure,
+# outside that network, and probes the public URL.
+#
+# WHAT IT WATCHES (2026-08-21): the STAGING deployment on the Hostinger VPS at
+#   https://questgro.2-24-194-99.sslip.io/health
+# and NOT cg.oculogic.io. Cloudflare fronts cg.oculogic.io and answers 403
+# "Just a moment..." to every datacenter IP (GitHub Actions, UptimeRobot,
+# Healthchecks' own HTTP checks), which is why this workflow sat disabled. The
+# staging hostname is a sslip.io wildcard record pointing straight at the VPS
+# with a real Let's Encrypt certificate and no Cloudflare in the path, so an
+# outside prober can actually reach it.
+#
+# The Mac-side monitor (~/questgro-monitor) still watches cg.oculogic.io. This
+# is additional outside-in coverage, not a replacement.
+#
+# WHEN cg.oculogic.io MOVES TO THE VPS: change HEALTH_URL below to the real
+# production hostname. Nothing else in this repo hardcodes a host.
 #
 # It carries NO Telegram/Gmail credentials. On success it pings a Healthchecks.io
 # check; on failure it pings <url>/fail and exits non-zero. Healthchecks.io then
 # emails carl@oculogicgroup.com — both when a probe reports failure and when the
 # probes stop arriving at all.
-#
-# To repoint at Render later: change HEALTH_URL below. Nothing else.
+
 name: questgro-external-probe
 
 on:
@@ -26,15 +40,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      HEALTH_URL: https://cg.oculogic.io/health
+      HEALTH_URL: https://questgro.2-24-194-99.sslip.io/health
       HC_PING_URL: ${{ secrets.HC_PING_URL }}
     steps:
       - name: Probe /health (3 attempts — a single blip must not alert)
         run: |
           ok=0; code=000
           for i in 1 2 3; do
-            # Cloudflare Bot Fight Mode challenges bare curl from datacenter IPs,
-            # so the probe presents a normal browser's headers.
+            # Browser-ish headers are kept only so this still works unchanged
+            # if HEALTH_URL is ever repointed at a Cloudflare-fronted host.
             code=$(curl -sS -m 15 -o /tmp/body.json -w '%{http_code}' \
               -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' \
               -H 'Accept: application/json,text/html;q=0.9,*/*;q=0.8' \
@@ -48,9 +62,9 @@ jobs:
           echo "body: $(head -c 400 /tmp/body.json 2>/dev/null)"
           if [ "$ok" = "1" ]; then
             if [ -n "$HC_PING_URL" ]; then curl -fsS -m 10 "$HC_PING_URL" >/dev/null && echo "heartbeat: sent"; fi
-            echo "QuestGro is UP (http=$code)"
+            echo "QuestGro staging is UP (http=$code)"
           else
             if [ -n "$HC_PING_URL" ]; then curl -fsS -m 10 --data-binary @/tmp/body.json "$HC_PING_URL/fail" >/dev/null || true; fi
-            echo "::error::QuestGro health probe FAILED from GitHub (http=$code)"
+            echo "::error::QuestGro staging health probe FAILED from GitHub (http=$code)"
             exit 1
           fi
