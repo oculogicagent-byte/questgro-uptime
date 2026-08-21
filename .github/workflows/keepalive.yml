@@ -1,0 +1,21 @@
+# GitHub disables scheduled workflows in a repo with no activity for 60 days.
+# This weekly empty commit keeps questgro-external-probe alive.
+name: keepalive
+on:
+  schedule:
+    - cron: '17 13 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  poke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name  "questgro-uptime bot"
+          git config user.email "actions@users.noreply.github.com"
+          date -u +"last keepalive: %Y-%m-%dT%H:%M:%SZ" > KEEPALIVE
+          git add KEEPALIVE
+          git commit -m "keepalive" || exit 0
+          git push
