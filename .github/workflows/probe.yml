@@ -64,6 +64,10 @@ jobs:
             if [ -n "$HC_PING_URL" ]; then curl -fsS -m 10 "$HC_PING_URL" >/dev/null && echo "heartbeat: sent"; fi
             echo "QuestGro staging is UP (http=$code)"
           else
+            # A connection timeout leaves /tmp/body.json missing, which made
+            # --data-binary error out and silently DROP the /fail ping — i.e.
+            # the total-outage case, the one that matters most, never alerted.
+            [ -f /tmp/body.json ] || echo "probe failed: http=$code (no response body)" > /tmp/body.json
             if [ -n "$HC_PING_URL" ]; then curl -fsS -m 10 --data-binary @/tmp/body.json "$HC_PING_URL/fail" >/dev/null || true; fi
             echo "::error::QuestGro staging health probe FAILED from GitHub (http=$code)"
             exit 1
